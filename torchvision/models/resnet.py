@@ -125,13 +125,15 @@ class ResNet(nn.Module):
 
     def __init__(self, block, layers, num_classes=1000, zero_init_residual=False,
                  groups=1, width_per_group=64, replace_stride_with_dilation=None,
-                 norm_layer=None):
+                 norm_layer=None,
+                 fully_conv=False):
         super(ResNet, self).__init__()
         if norm_layer is None:
             norm_layer = nn.BatchNorm2d
         self._norm_layer = norm_layer
 
         self.inplanes = 64
+        self.fully_conv = fully_conv
         self.dilation = 1
         if replace_stride_with_dilation is None:
             # each element in the tuple indicates if we should replace
@@ -156,6 +158,10 @@ class ResNet(nn.Module):
                                        dilate=replace_stride_with_dilation[2])
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.fc = nn.Linear(512 * block.expansion, num_classes)
+        
+        if self.fully_conv:
+            self.avgpool = nn.AvgPool2d(7, padding=3, stride=1)
+            self.fc = nn.Conv2d(512 * block.expansion, num_classes, 1)
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -211,7 +217,10 @@ class ResNet(nn.Module):
         x = self.layer4(x)
 
         x = self.avgpool(x)
-        x = torch.flatten(x, 1)
+        
+        if not self.fully_conv:
+            x = x.view(x.size(0), -1)
+            
         x = self.fc(x)
 
         return x
