@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from .utils import load_state_dict_from_url
+import numpy as np
 
 
 __all__ = ['ResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101',
@@ -42,13 +43,11 @@ class BasicBlock(nn.Module):
             norm_layer = nn.BatchNorm2d
         if groups != 1 or base_width != 64:
             raise ValueError('BasicBlock only supports groups=1 and base_width=64')
-        if dilation > 1:
-            raise NotImplementedError("Dilation > 1 not supported in BasicBlock")
         # Both self.conv1 and self.downsample layers downsample the input when stride != 1
-        self.conv1 = conv3x3(inplanes, planes, stride)
+        self.conv1 = conv3x3(inplanes, planes, stride, dilation=dilation)
         self.bn1 = norm_layer(planes)
         self.relu = nn.ReLU(inplace=True)
-        self.conv2 = conv3x3(planes, planes)
+        self.conv2 = conv3x3(planes, planes, dilation=dilation)
         self.bn2 = norm_layer(planes)
         self.downsample = downsample
         self.stride = stride
@@ -126,12 +125,23 @@ class ResNet(nn.Module):
     def __init__(self, block, layers, num_classes=1000, zero_init_residual=False,
                  groups=1, width_per_group=64, replace_stride_with_dilation=None,
                  norm_layer=None,
-                 fully_conv=False):
+                 fully_conv=False,
+                 remove_avg_pool_layer=False,
+                 output_stride=32):
         super(ResNet, self).__init__()
         if norm_layer is None:
             norm_layer = nn.BatchNorm2d
         self._norm_layer = norm_layer
 
+        # Add additional variables to track
+        # output stride. Necessary to achieve
+        # specified output stride.
+        self.output_stride = output_stride
+        self.current_stride = 4
+        self.current_dilation = 1
+        
+        self.remove_avg_pool_layer = remove_avg_pool_layer
+        
         self.inplanes = 64
         self.fully_conv = fully_conv
         self.dilation = 1
@@ -215,8 +225,9 @@ class ResNet(nn.Module):
         x = self.layer2(x)
         x = self.layer3(x)
         x = self.layer4(x)
-
-        x = self.avgpool(x)
+        
+        if not self.remove_avg_pool_layer:
+            x = self.avgpool(x)
         
         if not self.fully_conv:
             x = x.view(x.size(0), -1)
